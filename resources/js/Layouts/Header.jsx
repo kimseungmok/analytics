@@ -1,10 +1,13 @@
-import React from "react";
+// Header.jsx
+import React from 'react';
 
-const Header = () => {
+const Header = ({ pageTitle, children }) => {
   return (
-    <header className="header">
-      {/* top fix header */}
-      <h1 className="logo">My Analytics</h1>
+    <header className="flex justify-between items-center bg-white dark:bg-gray-800 shadow px-4 py-2">
+      <h1 className='text-lg font-bold'>{pageTitle}</h1>
+      <div className='flex items-center gap-2'>
+        {children}
+      </div>
     </header>
   );
 };

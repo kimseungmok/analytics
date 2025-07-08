@@ -2,36 +2,127 @@
 @tailwind components;
 @tailwind utilities;
 
+/* app.css */
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* 전체 화면 컨테이너: 세로 100% */
 .app-container {
   display: flex;
-  flex-direction: column;
   height: 100vh;
 }
 
-.header {
-  height: 60px;
+/* 사이드바 */
+.sidebar {
+  width: 13em;
+  background-color: #111827; /* 더 어두운 그레이 */
+  color: white;
+  /*padding: 0.2rem;*/
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-logo {
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-bottom:0.5rem;
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+/*.sidebar-menu {
+  padding: 0.5rem;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+}*/
+
+.sidebar-menu ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sidebar-menu li {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.sidebar-menu li:hover {
   background-color: #1f2937;
+}
+
+.sidebar-menu .upper,.middle {
+  border-top: 1px solid #4b545c;
+}
+
+/*.sidebar-menu ul,ol {
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-menu ul li {
+  margin: 10px 0 10px 0;
+}
+
+.sidebar-menu li:hover {
+  background-color: #1f2937;
+}
+
+.sidebar-menu ul li a {
+  padding: 0.5rem 0.75rem;
+}*/
+
+
+.right-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 헤더 영역 */
+.header {
+  height: 3em;
+  background-color: #1f2937; /* 어두운 그레이 */
   color: white;
   display: flex;
   align-items: center;
   padding: 0 1rem;
+  flex-shrink: 0;
 }
 
-.body-container {
-  display: flex;
-  flex: 1;
-}
-
-.sidebar {
-  width: 220px;
-  background-color: #111827;
+.page-title {
+  font-size: 1.5rem;
+  font-weight: bold;
   color: white;
-  padding: 1rem;
 }
 
+/* 메인 콘텐츠 영역 */
 .main-content {
   flex: 1;
   padding: 2rem;
-  background-color: #f9fafb;
+  background-color: #f9fafb; /* 밝은 회색 */
   overflow-y: auto;
+}
+
+.chart-box {
+  background-color: white;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 1rem;
+}
+
+.test {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 6px;
 }
