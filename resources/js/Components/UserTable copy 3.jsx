@@ -118,7 +118,7 @@ const UserTable = () => {
 
       {/* 테이블 */}
       <table className="min-w-full text-sm text-left">
-        <thead className="bg-white dark:bg-gray-700">
+        <thead className="bg-gray-100 dark:bg-gray-700">
           <tr>
             <th className="p-3 cursor-pointer" onClick={() => handleSort('name')}>
               이름 {renderArrow('name')}

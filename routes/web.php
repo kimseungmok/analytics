@@ -11,8 +11,6 @@ Route::get('/{any}', function () {
     return view('app'); // → resources/views/app.blade.php 를 반환
 })->where('any', '.*');
 
-
-
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
