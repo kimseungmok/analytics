@@ -5,6 +5,7 @@ import DashboardHeader from '@/Components/DashboardHeader';
 import UserTable from '@/Components/UserTable';
 import KPIPanel from '@/Components/KPIPanel';
 import SegmentMigrationPanel from '@/Components/SegmentMigrationPanel';
+import AttributeCrossAnalysisPanel from '@/Components/AttributeCrossAnalysisPanel';
 
 const Dashboard = () => {
   const [currentKpiDate, setCurrentKpiDate] = useState('2025-06-01');
@@ -36,6 +37,13 @@ const Dashboard = () => {
           key={`migration-${panelKey}`}
           currentDate={currentKpiDate}
           previousDate={previousKpiDate}
+        />
+      </div>
+
+      <div className="mt-6">
+        <AttributeCrossAnalysisPanel
+          key={`cross-analysis-${panelKey}`}
+          snapshotDate={currentKpiDate}
         />
       </div>
 

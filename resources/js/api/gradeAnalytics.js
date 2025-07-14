@@ -29,4 +29,19 @@ export const fetchSegmentMigrationData = async (currentDate, previousDate) => {
     console.error('Error fetching segment migration data:', error);
     throw error;
   }
-}
+};
+
+export const fetchSegmentCompositionData = async (snapshotDate, groupBy) => {
+  try{
+    const response = await axios.get('/api/segment-composition', {
+      params: {
+        snapshot_date: snapshotDate,
+        group_by: groupBy,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching segment composition data:', error);
+    throw error;
+  }
+};

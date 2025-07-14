@@ -5,10 +5,23 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;;
+
 use Carbon\Carbon;
+use Database\Factories\UserFactory;
+ use Illuminate\Support\Facades\Log;
 
 class GradeAnalyticsController extends Controller
 {
+  private $relevantSegmentIds = [1, 2, 3, 4, 5];
+
+  private $translationMap = [
+    'core' => 'コア',
+    'middle' => 'ミドル',
+    'light' => 'ライト',
+    'dormant' => '休眠',
+    'churned' => '離反',
+  ];
+
   public function getKpiComparison(Request $request)
   {
     // 1. 요청 파라미터 유효성 검사
@@ -240,9 +253,10 @@ class GradeAnalyticsController extends Controller
 
 
 
-  
 
-  public function getSegmentMigrationMatrix(Request $request){
+
+  public function getSegmentMigrationMatrix(Request $request)
+  {
     $request->validate([
       'current_date' => 'required|date_format:Y-m-d',
       'previous_date' => 'required|date_format:Y-m-d|before:current_date',
@@ -251,17 +265,15 @@ class GradeAnalyticsController extends Controller
     $currentDate = Carbon::parse($request->input('current_date'));
     $previousDate = Carbon::parse($request->input('previous_date'));
 
-    $relevantSegmentIds = [1, 2, 3, 4, 5];
-
     $segments = DB::table('SEGMENT_MASTER')
-      ->whereIn('SEGMENT_ID', $relevantSegmentIds)
+      ->whereIn('SEGMENT_ID', $this->relevantSegmentIds)
       ->orderBy('SEGMENT_ID')
       ->get(['SEGMENT_ID', 'SEGMENT_NAME']);
 
     //$segmentNames = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
     $segmentNamesRaw = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
 
-    $translationMap = [
+    $this->translationMap = [
       'core'    => 'コア',
       'middle'  => 'ミドル',
       'light'   => 'ライト',
@@ -273,13 +285,13 @@ class GradeAnalyticsController extends Controller
 
     $translatedSegmentHeaders = [];
     foreach ($segmentIdsOrdered as $id) {
-        $name = $segmentNamesRaw[$id] ?? null;
-        if ($name) {
-            $translatedSegmentHeaders[] = [
-                'id' => $id,
-                'name' => $translationMap[strtolower($name)] ?? $name,
-            ];
-        }
+      $name = $segmentNamesRaw[$id] ?? null;
+      if ($name) {
+        $translatedSegmentHeaders[] = [
+          'id' => $id,
+          'name' => $this->translationMap[strtolower($name)] ?? $name,
+        ];
+      }
     }
 
     $matrix = [];
@@ -297,26 +309,26 @@ class GradeAnalyticsController extends Controller
           ->whereDate('current_snap.SNAPSHOT_DATE', $currentDate)
           ->whereDate('prev_snap.SNAPSHOT_DATE', $previousDate);
       })
-      ->whereIn('prev_snap.SEGMENT_ID', $relevantSegmentIds)
-      ->whereIn('current_snap.SEGMENT_ID', $relevantSegmentIds)
+      ->whereIn('prev_snap.SEGMENT_ID', $this->relevantSegmentIds)
+      ->whereIn('current_snap.SEGMENT_ID', $this->relevantSegmentIds)
       ->select(
         'prev_snap.SEGMENT_ID AS previous_segment_id',
         'current_snap.SEGMENT_ID AS current_segment_id',
         DB::raw('COUNT(current_snap.TICKET) AS user_count')
       )
-      ->groupBy('prev_snap.SEGMENT_ID','current_snap.SEGMENT_ID')
+      ->groupBy('prev_snap.SEGMENT_ID', 'current_snap.SEGMENT_ID')
       ->get();
 
-    foreach ($transitions as $transition){
-      if(isset($matrix[$transition->previous_segment_id][$transition->current_segment_id])){
+    foreach ($transitions as $transition) {
+      if (isset($matrix[$transition->previous_segment_id][$transition->current_segment_id])) {
         $matrix[$transition->previous_segment_id][$transition->current_segment_id] = $transition->user_count;
       }
     }
 
     $formattedMatrix = [];
     foreach ($segmentIdsOrdered as $prevId) {
-      $row=[];
-      foreach($segmentIdsOrdered as $currId) {
+      $row = [];
+      foreach ($segmentIdsOrdered as $currId) {
         $row[] = $matrix[$prevId][$currId];
       }
       $formattedMatrix[] = $row;
@@ -332,4 +344,210 @@ class GradeAnalyticsController extends Controller
     ]);
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  public function getSegmentComposition(Request $request)
+  {
+    $request->validate([
+      'snapshot_date' => 'required|date_format:Y-m-d',
+      'group_by' => 'required|in:age,gender,store',
+    ]);
+
+    $snapshotDate = Carbon::parse($request->input('snapshot_date'));
+    $groupBy = $request->input('group_by');
+
+    $segments = DB::table('SEGMENT_MASTER')
+      ->whereIn('SEGMENT_ID', $this->relevantSegmentIds)
+      ->orderBy('SEGMENT_ID')
+      ->get(['SEGMENT_ID', 'SEGMENT_NAME']);
+
+    $segmentNamesRaw = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
+    $segmentIdsOrdered = $segments->pluck('SEGMENT_ID')->toArray();
+
+    $translatedSegmentNames = [];
+    foreach ($segmentIdsOrdered as $id) {
+      $name = $segmentNamesRaw[$id] ?? null;
+      if ($name) {
+        $translatedSegmentNames[$id] = $this->translationMap[strtolower($name)] ?? $name;
+      }
+    }
+
+    $query = DB::table('T_GRADE_SNAPSHOT AS gs')
+      ->whereDate('gs.SNAPSHOT_DATE', $snapshotDate)
+      ->whereIn('gs.SEGMENT_ID', $this->relevantSegmentIds);
+
+    $formattedComposition = [];
+    $attributeHeaders = [];
+
+    $ageGroupCase = "
+      CASE
+        WHEN tm.BIRTHDAY IS NULL THEN '不明'
+        ELSE
+          CASE
+            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 10 AND 19 THEN '10代'
+            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 20 AND 29 THEN '20代'
+            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 30 AND 39 THEN '30代'
+            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 40 AND 49 THEN '40代'
+            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 50 AND 59 THEN '50代'
+            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') >= 60 THEN '60代以上'
+            ELSE '不在'
+          END
+        END
+    ";
+
+    $genderCase = "
+      CASE
+        WHEN tm.SEX = 0 THEN '男性'
+        WHEN tm.SEX = 1 THEN '女性'
+        ELSE '不明'
+      END
+    ";
+
+    $storeNameCase = "
+      CASE
+        WHEN gs.LAST_VISITED_SHOP IS NULL OR gs.LAST_VISITED_SHOP = 0 THEN '不在店舗'
+        ELSE CONCAT('店舗', gs.LAST_VISITED_SHOP)
+      END
+    ";
+
+    $selectColumns = [];
+    $groupByColumns = [];
+    $rawAttributeCase = '';
+
+    if ($groupBy === 'age' || $groupBy === 'gender') {
+      $query->join('T_MEMBER_INFO AS tm', 'gs.TICKET', '=', 'tm.TICKET');
+
+      if ($groupBy === 'age') {
+        $rawAttributeCase = $ageGroupCase;
+        $selectColumns = [
+          DB::raw("{$ageGroupCase} AS attribute_value"),
+          'gs.SEGMENT_ID',
+          DB::raw("COUNT(gs.TICKET) AS user_count")
+        ];
+        $groupByColumns = [DB::raw($rawAttributeCase), 'gs.SEGMENT_ID'];
+        $attributeHeaders = ['年代'];
+      } elseif ($groupBy === 'gender') {
+        $rawAttributeCase = $genderCase;
+        $selectColumns = [
+          DB::raw("{$genderCase} AS attribute_value"),
+          'gs.SEGMENT_ID',
+          DB::raw("COUNT(gc.TICKET) AS user_count")
+        ];
+        $groupByColumns = [DB::raw($rawAttributeCase), 'gs.SEGMENT_ID'];
+        $attributeHeaders = ['性別'];
+      }
+    } elseif ($groupBy === 'store') {
+      $rawAttributeCase = $storeNameCase;
+      $selectColumns = [
+        DB::raw("{$storeNameCase} AS attribute_value"),
+        'gs.SEGMENT_ID',
+        DB::raw('COUNT(gs.TICKET) AS user_count')
+      ];
+      $groupByColumns = [DB::raw($rawAttributeCase), 'gs.SEGMENT_ID'];
+      $attributeHeaders = ['店舗'];
+    }
+
+    $results = $query
+      ->select($selectColumns)
+      ->groupBy($groupByColumns)
+      ->get();
+
+    $totalUsersByAttribute = [];
+    foreach ($results as $row) {
+      $key = $row->attribute_value;
+      $totalUsersByAttribute[$key] = ($totalUsersByAttribute[$key] ?? 0) + $row->user_count;
+    }
+
+    $tempComposition = [];
+    foreach ($results as $row) {
+      $key = $row->attribute_value;
+      if (!isset($tempComposition[$key])) {
+        $tempComposition[$key] = [
+          'attribute_value' => $row->attribute_value,
+        ];
+      }
+      $segmentName = $translatedSegmentNames[$row->SEGMENT_ID];
+      $ratio = $totalUsersByAttribute[$key] > 0 ? ($row->user_count / $totalUsersByAttribute[$key]) * 100 : 0;
+      $tempComposition[$key][$segmentName] = sprintf('%.1f%%', $ratio);
+    }
+
+    if ($groupBy === 'age') {
+      $ageOrder = ['10代', '20代', '30代', '40代', '50代', '60代以上', '不明'];
+      usort($tempComposition, function ($a, $b) use ($ageOrder) {
+        return array_search($a['attribute_value'], $ageOrder) <=> array_search($b['attribute_value'], $ageOrder);
+      });
+    } elseif ($groupBy === 'gender') {
+      $genderOrder = ['男性', '女性', '不明'];
+      usort($tempComposition, function ($a, $b) use ($genderOrder) {
+        return array_search($a['attribute_value'], $genderOrder) <=> array_search($b['attribute_value'], $genderOrder);
+      });
+    } elseif ($groupBy === 'store') {
+      usort($tempComposition, function ($a, $b) {
+        return array_search($a['attribute_value'], $b['attribute_value']);
+      });
+    }
+
+    $formattedComposition = array_values($tempComposition);
+
+    return response()->json([
+      'status' => 'success',
+      'snapshot_date' => $snapshotDate->format('Y-m-d'),
+      'group_by' => $groupBy,
+      'attribute_headers' => $attributeHeaders,
+      'segment_headers' => array_values($translatedSegmentNames),
+      'data' => $formattedComposition,
+    ]);
+  }
 }
