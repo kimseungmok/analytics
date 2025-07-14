@@ -28,7 +28,7 @@ const KPIPanel = ({ currentDate, previousDate }) => {
   }, [currentDate, previousDate]);
 
   if(loading) {
-    return  <div className="bg-white shadow-md rounded-lg p-6 text-center">Loading data...</div>;
+    return  <div className="bg-white shadow-md rounded-lg p-6 text-center">全体KPIデータローディング中...</div>;
   }
 
   if (error) {
@@ -50,7 +50,7 @@ const KPIPanel = ({ currentDate, previousDate }) => {
 
   return(
     <div className="bg-white shadow-md rounded-lg p-6">
-      <h2 className="text-xl font-semibold mb-4">全体KPIパネル ({currentDate} vs {previousDate})</h2>
+      <h2 className="text-xl font-semibold mb-4">全体KPIパネル ({previousDate} vs {currentDate})</h2>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">

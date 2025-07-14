@@ -15,3 +15,18 @@ export const fetchKPIComparisonData = async (currentDate, previousDate) => {
     throw error;
   }
 };
+
+export const fetchSegmentMigrationData = async (currentDate, previousDate) => {
+  try {
+    const response = await axios.get('/api/segment-migration', {
+      params: {
+        current_date : currentDate,
+        previous_date : previousDate,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching segment migration data:', error);
+    throw error;
+  }
+}

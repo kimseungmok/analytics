@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;;
-
 use Carbon\Carbon;
 
 class GradeAnalyticsController extends Controller
@@ -85,6 +84,56 @@ class GradeAnalyticsController extends Controller
     ]);
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   private function calculateAllKpisForDate(Carbon $date)
   {
     // 1. 해당 날짜의 기본 KPI (활성 사용자, 이탈 사용자) 계산
@@ -136,4 +185,151 @@ class GradeAnalyticsController extends Controller
       'churnRate' => $churnRate,
     ];
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  public function getSegmentMigrationMatrix(Request $request){
+    $request->validate([
+      'current_date' => 'required|date_format:Y-m-d',
+      'previous_date' => 'required|date_format:Y-m-d|before:current_date',
+    ]);
+
+    $currentDate = Carbon::parse($request->input('current_date'));
+    $previousDate = Carbon::parse($request->input('previous_date'));
+
+    $relevantSegmentIds = [1, 2, 3, 4, 5];
+
+    $segments = DB::table('SEGMENT_MASTER')
+      ->whereIn('SEGMENT_ID', $relevantSegmentIds)
+      ->orderBy('SEGMENT_ID')
+      ->get(['SEGMENT_ID', 'SEGMENT_NAME']);
+
+    //$segmentNames = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
+    $segmentNamesRaw = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
+
+    $translationMap = [
+      'core'    => 'コア',
+      'middle'  => 'ミドル',
+      'light'   => 'ライト',
+      'dormant' => '休眠',
+      'churned' => '離反',
+    ];
+
+    $segmentIdsOrdered = $segments->pluck('SEGMENT_ID')->toArray();
+
+    $translatedSegmentHeaders = [];
+    foreach ($segmentIdsOrdered as $id) {
+        $name = $segmentNamesRaw[$id] ?? null;
+        if ($name) {
+            $translatedSegmentHeaders[] = [
+                'id' => $id,
+                'name' => $translationMap[strtolower($name)] ?? $name,
+            ];
+        }
+    }
+
+    $matrix = [];
+    foreach ($segmentIdsOrdered as $prevId) {
+      $row = [];
+      foreach ($segmentIdsOrdered as $currId) {
+        $row[$currId] = 0;
+      }
+      $matrix[$prevId] = $row;
+    }
+
+    $transitions = DB::table('T_GRADE_SNAPSHOT AS current_snap')
+      ->join('T_GRADE_SNAPSHOT AS prev_snap', function ($join) use ($currentDate, $previousDate) {
+        $join->on('current_snap.TICKET', '=', 'prev_snap.TICKET')
+          ->whereDate('current_snap.SNAPSHOT_DATE', $currentDate)
+          ->whereDate('prev_snap.SNAPSHOT_DATE', $previousDate);
+      })
+      ->whereIn('prev_snap.SEGMENT_ID', $relevantSegmentIds)
+      ->whereIn('current_snap.SEGMENT_ID', $relevantSegmentIds)
+      ->select(
+        'prev_snap.SEGMENT_ID AS previous_segment_id',
+        'current_snap.SEGMENT_ID AS current_segment_id',
+        DB::raw('COUNT(current_snap.TICKET) AS user_count')
+      )
+      ->groupBy('prev_snap.SEGMENT_ID','current_snap.SEGMENT_ID')
+      ->get();
+
+    foreach ($transitions as $transition){
+      if(isset($matrix[$transition->previous_segment_id][$transition->current_segment_id])){
+        $matrix[$transition->previous_segment_id][$transition->current_segment_id] = $transition->user_count;
+      }
+    }
+
+    $formattedMatrix = [];
+    foreach ($segmentIdsOrdered as $prevId) {
+      $row=[];
+      foreach($segmentIdsOrdered as $currId) {
+        $row[] = $matrix[$prevId][$currId];
+      }
+      $formattedMatrix[] = $row;
+    }
+
+    return response()->json([
+      'status' => 'success',
+      'previous_date' => $previousDate->format('Y-m-d'),
+      'current_date' => $currentDate->format('Y-m-d'),
+      'row_headers' => $translatedSegmentHeaders,
+      'col_headers' => $translatedSegmentHeaders,
+      'matrix_data' => $formattedMatrix,
+    ]);
+  }
+
 }
