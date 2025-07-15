@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;;
 
 use Carbon\Carbon;
 use Database\Factories\UserFactory;
- use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Log;
 
 class GradeAnalyticsController extends Controller
 {
@@ -400,13 +400,12 @@ class GradeAnalyticsController extends Controller
 
   public function getSegmentComposition(Request $request)
   {
+    // 1. 요청 파라미터 유효성 검사
     $request->validate([
       'snapshot_date' => 'required|date_format:Y-m-d',
-      'group_by' => 'required|in:age,gender,store',
     ]);
 
     $snapshotDate = Carbon::parse($request->input('snapshot_date'));
-    $groupBy = $request->input('group_by');
 
     $segments = DB::table('SEGMENT_MASTER')
       ->whereIn('SEGMENT_ID', $this->relevantSegmentIds)
@@ -416,137 +415,113 @@ class GradeAnalyticsController extends Controller
     $segmentNamesRaw = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
     $segmentIdsOrdered = $segments->pluck('SEGMENT_ID')->toArray();
 
-    $translatedSegmentNames = [];
+    $translatedSegmentHeaders = [];
     foreach ($segmentIdsOrdered as $id) {
       $name = $segmentNamesRaw[$id] ?? null;
       if ($name) {
-        $translatedSegmentNames[$id] = $this->translationMap[strtolower($name)] ?? $name;
+        $translatedSegmentHeaders[$id] = $this->translationMap[strtolower($name)];
       }
     }
 
     $query = DB::table('T_GRADE_SNAPSHOT AS gs')
+      ->join('T_MEMBER_INFO AS tmi', 'gs.TICKET', '=', 'tmi.TICKET')
       ->whereDate('gs.SNAPSHOT_DATE', $snapshotDate)
       ->whereIn('gs.SEGMENT_ID', $this->relevantSegmentIds);
 
-    $formattedComposition = [];
-    $attributeHeaders = [];
-
-    $ageGroupCase = "
+    $ageGroupSql = "
       CASE
-        WHEN tm.BIRTHDAY IS NULL THEN '不明'
-        ELSE
-          CASE
-            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 10 AND 19 THEN '10代'
-            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 20 AND 29 THEN '20代'
-            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 30 AND 39 THEN '30代'
-            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 40 AND 49 THEN '40代'
-            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 50 AND 59 THEN '50代'
-            WHEN DATEDIFF(year, tm.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') >= 60 THEN '60代以上'
-            ELSE '不在'
-          END
+        WHEN tmi.BIRTHDAY IS NULL THEN '不明'
+      ELSE
+        CASE
+          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 10 AND 19 THEN '10代'
+          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 20 AND 29 THEN '20代'
+          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 30 AND 39 THEN '30代'
+          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 40 AND 49 THEN '40代'
+          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 50 AND 59 THEN '50代'
+          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') >= 60 THEN '60代以上'
+          ELSE '不在'
         END
-    ";
-
-    $genderCase = "
-      CASE
-        WHEN tm.SEX = 0 THEN '男性'
-        WHEN tm.SEX = 1 THEN '女性'
-        ELSE '不明'
       END
     ";
 
-    $storeNameCase = "
+    $genderSql = "
       CASE
-        WHEN gs.LAST_VISITED_SHOP IS NULL OR gs.LAST_VISITED_SHOP = 0 THEN '不在店舗'
-        ELSE CONCAT('店舗', gs.LAST_VISITED_SHOP)
+        WHEN tmi.SEX = 0 THEN '男性'
+        WHEN tmi.SEX = 1 THEN '女性'
+        ELSE 'その他'
       END
     ";
 
-    $selectColumns = [];
-    $groupByColumns = [];
-    $rawAttributeCase = '';
-
-    if ($groupBy === 'age' || $groupBy === 'gender') {
-      $query->join('T_MEMBER_INFO AS tm', 'gs.TICKET', '=', 'tm.TICKET');
-
-      if ($groupBy === 'age') {
-        $rawAttributeCase = $ageGroupCase;
-        $selectColumns = [
-          DB::raw("{$ageGroupCase} AS attribute_value"),
-          'gs.SEGMENT_ID',
-          DB::raw("COUNT(gs.TICKET) AS user_count")
-        ];
-        $groupByColumns = [DB::raw($rawAttributeCase), 'gs.SEGMENT_ID'];
-        $attributeHeaders = ['年代'];
-      } elseif ($groupBy === 'gender') {
-        $rawAttributeCase = $genderCase;
-        $selectColumns = [
-          DB::raw("{$genderCase} AS attribute_value"),
-          'gs.SEGMENT_ID',
-          DB::raw("COUNT(gc.TICKET) AS user_count")
-        ];
-        $groupByColumns = [DB::raw($rawAttributeCase), 'gs.SEGMENT_ID'];
-        $attributeHeaders = ['性別'];
-      }
-    } elseif ($groupBy === 'store') {
-      $rawAttributeCase = $storeNameCase;
-      $selectColumns = [
-        DB::raw("{$storeNameCase} AS attribute_value"),
-        'gs.SEGMENT_ID',
-        DB::raw('COUNT(gs.TICKET) AS user_count')
-      ];
-      $groupByColumns = [DB::raw($rawAttributeCase), 'gs.SEGMENT_ID'];
-      $attributeHeaders = ['店舗'];
-    }
+    $selectColumns = [
+      DB::raw("{$ageGroupSql} AS age_group_val"),
+      DB::raw("{$genderSql} AS gender_val"),
+      'gs.SEGMENT_ID',
+      DB::raw('COUNT(gs.TICKET) AS user_count')
+    ];
+    $groupByColumns = [DB::raw($ageGroupSql), DB::raw($genderSql), 'gs.SEGMENT_ID'];
 
     $results = $query
       ->select($selectColumns)
       ->groupBy($groupByColumns)
       ->get();
 
-    $totalUsersByAttribute = [];
-    foreach ($results as $row) {
-      $key = $row->attribute_value;
-      $totalUsersByAttribute[$key] = ($totalUsersByAttribute[$key] ?? 0) + $row->user_count;
-    }
-
     $tempComposition = [];
+    $totalUsersByAttributeCombination = [];
     foreach ($results as $row) {
-      $key = $row->attribute_value;
-      if (!isset($tempComposition[$key])) {
-        $tempComposition[$key] = [
-          'attribute_value' => $row->attribute_value,
-        ];
-      }
-      $segmentName = $translatedSegmentNames[$row->SEGMENT_ID];
-      $ratio = $totalUsersByAttribute[$key] > 0 ? ($row->user_count / $totalUsersByAttribute[$key]) * 100 : 0;
-      $tempComposition[$key][$segmentName] = sprintf('%.1f%%', $ratio);
+      $key = $row->age_group_val . '_' . $row->gender_val;
+      $totalUsersByAttributeCombination[$key] = ($totalUsersByAttributeCombination[$key] ?? 0) + $row->user_count;
     }
 
-    if ($groupBy === 'age') {
-      $ageOrder = ['10代', '20代', '30代', '40代', '50代', '60代以上', '不明'];
-      usort($tempComposition, function ($a, $b) use ($ageOrder) {
-        return array_search($a['attribute_value'], $ageOrder) <=> array_search($b['attribute_value'], $ageOrder);
-      });
-    } elseif ($groupBy === 'gender') {
-      $genderOrder = ['男性', '女性', '不明'];
-      usort($tempComposition, function ($a, $b) use ($genderOrder) {
-        return array_search($a['attribute_value'], $genderOrder) <=> array_search($b['attribute_value'], $genderOrder);
-      });
-    } elseif ($groupBy === 'store') {
-      usort($tempComposition, function ($a, $b) {
-        return array_search($a['attribute_value'], $b['attribute_value']);
-      });
+    foreach ($totalUsersByAttributeCombination as $key => $totalCount) {
+      // 키에서 연령대와 성별을 다시 추출 (예: "10代_男性" -> "10代", "男性")
+      list($ageGroup, $gender) = explode('_', $key, 2);
+
+      $tempComposition[$key] = [
+        '年代' => $ageGroup,
+        '性別' => $gender,
+      ];
+
+      // 모든 세그먼트 비율을 0.0%로 초기화
+      foreach ($translatedSegmentHeaders as $segmentName) {
+        $tempComposition[$key]["{$segmentName}比率"] = sprintf('%.1f%%', 0);
+      }
     }
+
+    foreach ($results as $row) {
+        $key = $row->age_group_val . '_' . $row->gender_val;
+        $segmentName = $translatedSegmentHeaders[$row->SEGMENT_ID];
+        $ratio = $totalUsersByAttributeCombination[$key] > 0 ? ($row->user_count / $totalUsersByAttributeCombination[$key]) * 100 : 0;
+        $tempComposition[$key]["{$segmentName}比率"] = sprintf('%.1f%%', $ratio);
+    }
+
+    $ageGroupOrder = ['10代', '20代', '30代', '40代', '50代', '60代以上', '不在', '不明'];
+    $genderOrder = ['男性', '女性', 'その他'];
+
+    usort($tempComposition, function ($a, $b) use ($ageGroupOrder, $genderOrder) {
+      $ageGroupA = $a['年代'];
+      $ageGroupB = $b['年代'];
+      $genderGroupA = $a['性別'];
+      $genderGroupB = $b['性別'];
+
+      $ageGroupCompare = array_search($ageGroupA, $ageGroupOrder) <=> array_search($ageGroupB, $ageGroupOrder);
+      if ($ageGroupCompare !== 0) {
+        return $ageGroupCompare;
+      }
+
+      return array_search($genderGroupA, $genderOrder) <=> array_search($genderGroupB, $genderOrder);
+    });
 
     $formattedComposition = array_values($tempComposition);
+
+    $finalHeaders = ['年代', '性別'];
+    foreach ($translatedSegmentHeaders as $segmentName) {
+      $finalHeaders[] = "{$segmentName}比率";
+    }
 
     return response()->json([
       'status' => 'success',
       'snapshot_date' => $snapshotDate->format('Y-m-d'),
-      'group_by' => $groupBy,
-      'attribute_headers' => $attributeHeaders,
-      'segment_headers' => array_values($translatedSegmentNames),
+      'headers' => $finalHeaders,
       'data' => $formattedComposition,
     ]);
   }

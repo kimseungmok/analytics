@@ -31,12 +31,11 @@ export const fetchSegmentMigrationData = async (currentDate, previousDate) => {
   }
 };
 
-export const fetchSegmentCompositionData = async (snapshotDate, groupBy) => {
+export const fetchSegmentCompositionData = async (snapshotDate) => {
   try{
     const response = await axios.get('/api/segment-composition', {
       params: {
         snapshot_date: snapshotDate,
-        group_by: groupBy,
       },
     });
     return response.data;
