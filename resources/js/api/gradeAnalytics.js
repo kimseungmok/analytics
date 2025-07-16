@@ -1,5 +1,7 @@
 import axios from "axios";
 
+const API_BASE_URL = '/api';
+
 export const fetchKPIComparisonData = async (currentDate, previousDate) => {
   try{
     const response = await axios.get('/api/kpi-comparison', {
@@ -37,6 +39,21 @@ export const fetchSegmentCompositionData = async (snapshotDate) => {
       params: {
         snapshot_date: snapshotDate,
       },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching segment composition data:', error);
+    throw error;
+  }
+};
+
+export const fetchSegmentTransitionSankeyData = async (startDate, endDate) => {
+  try {
+    const response = await axios.get(`${API_BASE_URL}/analytics/segment-transition`, {
+      params : {
+        start_date : startDate,
+        end_date: endDate,
+      }
     });
     return response.data;
   } catch (error) {

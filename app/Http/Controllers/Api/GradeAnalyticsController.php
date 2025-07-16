@@ -525,4 +525,142 @@ class GradeAnalyticsController extends Controller
       'data' => $formattedComposition,
     ]);
   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  public function getSegmentTransitionSankeyData(Request $request) {
+    $startDateStr = $request->input('start_date');
+    $endDateStr = $request->input('end_date');
+
+    if (!$startDateStr || $endDateStr) {
+      return response()->json(['error' => 'start_datetと end_dateがありません。'], 400);
+    }
+
+    try {
+      $startDate = Carbon::parse($startDateStr);
+      $endDate = Carbon::parse($endDateStr);
+    }
+    catch (\Exception $e) {
+      return response()->json(['error' => '無効な日付形式です。'], 400);
+    }
+
+    if ($startDate->greaterThan($endDate)) {
+      return response()->json(['error' => 'start_dateはend_dateより遅い日付にすることはできません。'], 400);
+    }
+
+    $snapshotDates = [];
+    $currentDate = clone $startDate;
+
+    while ($currentDate->lessThanOrEqualTo($endDate)) {
+      $snapshotDates[] = $currentDate->format('Y-m-d');
+      $currentDate->addMonthNoOverflow();
+    }
+
+    if (count($snapshotDates) < 2) {
+      return response()->json(['nodes' => [], 'links' => []]);
+    }
+
+    $nodes = [];
+    $links = [];
+    $nodeMap = [];
+    $nodeIdCounter = 0;
+
+    for ($i = 0; $i < count($snapshotDates) -1; $i++) {
+      $currentSnapshotDate = $snapshotDates[$i];
+      $nextSnapshotDate = $snapshotDates[$i + 1];
+
+      $transitions = DB::table('T_GRADE_SNAPSHOT AS t1')
+        ->join('T_GRADE_SNAPSHOT AS t2', 't1.TICKET', '=', 't2.TICKET')
+        ->join('SEGMENT_MASTER AS sm1', 't1.SEGMENT_ID', '=', 'sm1.SEGMENT_ID')
+        ->join('SEGMENT_MASTER AS sm2', 't1.SEGMENT_ID', '=', 'sm2.SEGMENT_ID')
+        ->select(
+          'sm1.SEGMENT_NAME AS current_segment_name',
+          'sm2.SEGMENT_NAME AS next_segment_name',
+          DB::raw('COUNT(t1.TICKET) AS transition_count')
+        )
+        ->where('t1.SNAPSHOT_DATE', $currentSnapshotDate)
+        ->where('t2.SNAPSHOT_DATE', $nextSnapshotDate)
+        ->groupBy('sm1.SEGMENT_NAME', 'sm2.SEGMENT_NAME')
+        ->get();
+
+        foreach ($transitions as $transition) {
+          $sourceNodeName = $transition->current_segment_name . ' (' . $currentSnapshotDate . ')';
+          $targetNodeName = $transition->next_segemnt_name . ' (' . $nextSnapshotDate . ')';
+
+          if (!isset($nodeMap[$sourceNodeName])) {
+            $nodeMap[$sourceNodeName] = $nodeIdCounter;
+            $nodes[] = ['id' => $nodeIdCounter, 'name' => $sourceNodeName];
+            $nodeIdCounter++;
+          }
+
+          if(!isset($nodeMap[$targetNodeName])) {
+            $nodeMap[$targetNodeName] = $nodeIdCounter;
+            $nodes[] = ['id' => $nodeIdCounter, 'name' => $targetNodeName];
+            $nodeIdCounter++;
+          }
+
+          $links[] = [
+            'source' => $nodeMap[$sourceNodeName],
+            'target' => $nodeMap[$targetNodeName],
+            'value' => $transition->transition_count,
+          ];
+        }
+    }
+
+    return response()->json([
+      'nodes' => $nodes,
+      'links' => $links,
+    ]);
+  }
 }
