@@ -14,4 +14,5 @@ Route::get('/grade-compare',[GradeAnalyticsController::class, 'compare']);
 Route::get('/kpi-comparison', [GradeAnalyticsController::class, 'getKpiComparison']);
 Route::get('/segment-migration', [GradeAnalyticsController::class, 'getSegmentMigrationMatrix']);
 Route::get('/segment-composition', [GradeAnalyticsController::class, 'getSegmentComposition']);
-Route::get('/segment-sankey-data', [GradeAnalyticsController::class, 'getSegmentSankeyData']);
+Route::get('/segment-transition', [GradeAnalyticsController::class, 'getSegmentSankeyData']);
+//Route::get('/analytics/segment-transition', [GradeAnalyticsController::class, 'getSegmentSankeyData']);

@@ -6,6 +6,7 @@ import UserTable from '@/Components/UserTable';
 import KPIPanel from '@/Components/KPIPanel';
 import SegmentMigrationPanel from '@/Components/SegmentMigrationPanel';
 import AttributeCrossAnalysisPanel from '@/Components/AttributeCrossAnalysisPanel';
+import SankeyDiagramPanel from '@/Components/SankeyDiagramPanel';
 
 const Dashboard = () => {
   const [currentKpiDate, setCurrentKpiDate] = useState('2025-06-01');
@@ -39,6 +40,15 @@ const Dashboard = () => {
           previousDate={previousKpiDate}
         />
       </div>
+      
+
+      <div className="mt-6"> { }
+        <SankeyDiagramPanel
+          key={`sankey-${panelKey}`}
+          startDate={previousKpiDate}
+          endDate={currentKpiDate}
+        />
+      </div>
 
       <div className="mt-6">
         <AttributeCrossAnalysisPanel
@@ -47,10 +57,6 @@ const Dashboard = () => {
         />
       </div>
 
-
-      <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6'></div>
-      <ChartGrid />
-      <UserTable />
     </div>
   );
 };

@@ -49,7 +49,8 @@ export const fetchSegmentCompositionData = async (snapshotDate) => {
 
 export const fetchSegmentTransitionSankeyData = async (startDate, endDate) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/analytics/segment-transition`, {
+    //const response = await axios.get(`${API_BASE_URL}/analytics/segment-transition`, {
+    const response = await axios.get(`${API_BASE_URL}/segment-transition`, {
       params : {
         start_date : startDate,
         end_date: endDate,

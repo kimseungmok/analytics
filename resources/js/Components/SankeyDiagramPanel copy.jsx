@@ -4,17 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { fetchSegmentTransitionSankeyData } from '../api/gradeAnalytics';
 import ChartGrid from './ChartGrid';
 
-// 1. 세그먼트별 색상 맵 정의 - 일본어 이름으로 변경
-const SEGMENT_COLOR_MAP = {
-  'コア': '#4682B4',    // core
-  'ライト': '#32CD32',   // light
-  'ミドル': '#8A2BE2',  // middle
-  '休眠': '#DAA520', // dormant
-  '離反': '#FF6347', // churned
-  '非コンバージョンユーザー': '#808080',   // never (백엔드 translationMap에 추가된 '非コンバージョンユーザー'에 맞춰 추가)
-  // 필요에 따라 더 많은 세그먼트와 색상을 추가할 수 있습니다.
-};
-
 const SankeyDiagramPanel = ({ startDate, endDate }) => {
   const [sankeyData, setSankeyData] = useState({ nodes: [], links: [] });
   const [isLoading, setIsLoading] = useState(false);
@@ -113,29 +102,18 @@ const SankeyDiagramPanel = ({ startDate, endDate }) => {
         data.addRows(chartRows);
         console.log('Google Charts DataTable에 데이터 추가 완료. Rows:', chartRows.length);
 
-        // 2. 노드 색상 동적 생성
-        const nodeColorsArray = sankeyData.nodes.map(node => {
-          // 노드 이름에서 세그먼트 이름 추출 (예: "離反 (2025-05-01)" -> "離反")
-          // 괄호 '(' 또는 공백 ' '이 나오기 전까지의 문자열을 추출하도록 정규식 수정
-          const segmentNameMatch = node.name.match(/^([^\s\(]+)/);
-          const segmentName = segmentNameMatch ? segmentNameMatch[1] : 'default'; // 매칭 실패 시 'default' 사용
-
-          // 정의된 색상 맵에서 색상 가져오기, 없으면 회색 기본값
-          return SEGMENT_COLOR_MAP[segmentName] || '#CCCCCC';
-        });
-
         const options = {
           width: '100%',
           height: 500,
           sankey: {
             node: {
-              colors: nodeColorsArray, // 동적으로 생성된 세그먼트별 색상 적용
+              colors: ['#a6cee3', '#b2df8a', '#fb9a99', '#fdbf6f', '#cab2d6', '#ffff99', '#1f78b4', '#33a02c'],
               label: { fontName: 'Arial', fontSize: 10, color: '#000' }
             },
             link: {
-              colorMode: 'source', // 링크는 시작 노드의 색상을 따름
-              // 'colors' 배열은 colorMode가 'gradient'일 때 주로 사용됩니다.
-              // 'source' 모드에서는 별도로 지정할 필요가 없습니다.
+              //colorMode: 'gradient',
+              colorMode: 'source',
+              colors: ['#a6cee3', '#b2df8a', '#fb9a99', '#fdbf6f', '#cab2d6', '#ffff99', '#1f78b4', '#33a02c']
             }
           }
         };
@@ -161,7 +139,7 @@ const SankeyDiagramPanel = ({ startDate, endDate }) => {
   }, [sankeyData, googleChartsLoaded]);
 
   return (
-    <ChartGrid title={`セグメント遷移サンキーダイアグラム (${startDate} ~ ${endDate})`}>
+    <ChartGrid title="セグメント遷移サンキーダイアグラム">
       <div className="p-4">
         {isLoading && <p>データを読み込み中...</p>}
         {error && <p className="text-red-500">{error}</p>}

@@ -1,35 +1,30 @@
-import React from "react";
-import BarChartBox from "./BarChartBox";
-import PieChartBox from "./PieChartBox";
-import StatBox from "./StatBox";
-import { FaUsers, FaShoppingCart, FaDollarSign, FaChartLine } from 'react-icons/fa';
+// resources/js/Components/ChartGrid.jsx
 
-const ChartGrid = () => {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-      <div>
-        <BarChartBox />
-      </div>
+import React from 'react';
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <StatBox title="New Users" value="3,456" icon={<FaUsers />} />
-        <StatBox title="New Orders" value="123" icon={<FaChartLine />} />
-        <StatBox title="Revenue Today" value="$12,345" icon={<FaDollarSign />} />
-        <StatBox title="Growth Rate" value="789" icon={<FaShoppingCart />} />
-      </div>
+/**
+ * ChartGrid Component
+ * A reusable container component for displaying charts or other content panels.
+ * Provides a consistent visual style with a title.
+ *
+ * @param {object} props
+ * @param {string} props.title - The title to display at the top of the grid.
+ * @param {React.ReactNode} props.children - The content to be rendered inside the grid.
+ */
+const ChartGrid = ({ title, children }) => {
+    return (
+        <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+            {/* Panel Header with Title */}
+            <div className="p-4 border-b border-gray-200 font-semibold text-lg">
+                {title}
+            </div>
 
-      <div>
-        <PieChartBox />
-      </div>
-    </div>
-  )
-}
-/*
-grid               // CSS Grid 사용
-grid-cols-1        // 기본: 1열
-md:grid-cols-2     // medium(768px 이상): 2열
-xl:grid-cols-3     // xl(1280px 이상): 3열
-gap-6              // 차트 간 여백
-p-4                // 안쪽 패딩
-*/
+            {/* Panel Content */}
+            <div className="p-4">
+                {children}
+            </div>
+        </div>
+    );
+};
+
 export default ChartGrid;

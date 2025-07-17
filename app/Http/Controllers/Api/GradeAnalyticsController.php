@@ -20,6 +20,7 @@ class GradeAnalyticsController extends Controller
     'light' => 'ライト',
     'dormant' => '休眠',
     'churned' => '離反',
+    'never' => '非コンバージョンユーザー',
   ];
 
   public function getKpiComparison(Request $request)
@@ -579,11 +580,17 @@ class GradeAnalyticsController extends Controller
 
 
 
-  public function getSegmentTransitionSankeyData(Request $request) {
+  public function getSegmentSankeyData(Request $request) {
+
+    $request->validate([
+      'start_date' => 'required|date_format:Y-m-d',
+      'end_date' => 'required|date_format:Y-m-d|before:current_date',
+    ]);
+
     $startDateStr = $request->input('start_date');
     $endDateStr = $request->input('end_date');
 
-    if (!$startDateStr || $endDateStr) {
+    if (!$startDateStr || !$endDateStr) {
       return response()->json(['error' => 'start_datetと end_dateがありません。'], 400);
     }
 
@@ -623,7 +630,7 @@ class GradeAnalyticsController extends Controller
       $transitions = DB::table('T_GRADE_SNAPSHOT AS t1')
         ->join('T_GRADE_SNAPSHOT AS t2', 't1.TICKET', '=', 't2.TICKET')
         ->join('SEGMENT_MASTER AS sm1', 't1.SEGMENT_ID', '=', 'sm1.SEGMENT_ID')
-        ->join('SEGMENT_MASTER AS sm2', 't1.SEGMENT_ID', '=', 'sm2.SEGMENT_ID')
+        ->join('SEGMENT_MASTER AS sm2', 't2.SEGMENT_ID', '=', 'sm2.SEGMENT_ID')
         ->select(
           'sm1.SEGMENT_NAME AS current_segment_name',
           'sm2.SEGMENT_NAME AS next_segment_name',
@@ -635,8 +642,11 @@ class GradeAnalyticsController extends Controller
         ->get();
 
         foreach ($transitions as $transition) {
-          $sourceNodeName = $transition->current_segment_name . ' (' . $currentSnapshotDate . ')';
-          $targetNodeName = $transition->next_segemnt_name . ' (' . $nextSnapshotDate . ')';
+          $translatedCurrentSegmentName = $this->translationMap[strtolower($transition->current_segment_name)] ?? $transition->current_segment_name;
+          $translatedNextSegmentName = $this->translationMap[strtolower($transition->next_segment_name)] ?? $transition->next_segment_name;
+
+          $sourceNodeName = $translatedCurrentSegmentName . ' (' . $currentSnapshotDate . ')';
+          $targetNodeName = $translatedNextSegmentName . ' (' . $nextSnapshotDate . ')';
 
           if (!isset($nodeMap[$sourceNodeName])) {
             $nodeMap[$sourceNodeName] = $nodeIdCounter;
