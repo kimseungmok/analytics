@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import clsx from 'clsx';
 import { fetchSegmentCompositionData } from '@/api/gradeAnalytics';
 
-const AttributeCrossAnalysisPanel = ({ snapshotDate }) => {
+const AttributeCrossAnalysisPanel = ({ snapshotDate, selectedBranches }) => {
   const [compositionData, setCompositionData] = useState(null);
   const [headers, setHeaders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +21,7 @@ const AttributeCrossAnalysisPanel = ({ snapshotDate }) => {
       setSortDirection('asc'); // Reset sort direction
 
       try {
-        const data = await fetchSegmentCompositionData(snapshotDate);
+        const data = await fetchSegmentCompositionData(snapshotDate, selectedBranches);
         setCompositionData(data);
         setHeaders(data.headers);
 
@@ -107,19 +108,19 @@ const AttributeCrossAnalysisPanel = ({ snapshotDate }) => {
 
   if (loading) {
     content = (
-      <div className="text-center py-8">
+      <div className="text-center py-4 text-xs">
         属性別クロス分析データローディング中...
       </div>
     );
   } else if (error) {
     content = (
-      <div className="text-center py-8 text-red-600">
+      <div className="text-center py-4 text-red-600 text-xs">
         {error}
       </div>
     );
   } else if (!compositionData || !compositionData.data || compositionData.data.length === 0) {
     content = (
-      <div className="text-center py-8">
+      <div className="text-center py-4 text-xs">
         表示する属性別クロス分析データがありません。
       </div>
     );
@@ -129,15 +130,18 @@ const AttributeCrossAnalysisPanel = ({ snapshotDate }) => {
 
     content = (
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="min-w-full table-fixed text-xs">
           <thead className="bg-gray-50">
             <tr>
-              {/* 통합된 headers 배열을 사용하여 모든 헤더 동적 렌더링 */}
+              {/* 동적으로 헤더 렌더링 */}
               {headers.map((header, index) => (
                 <th
                   key={`header-${index}`}
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" // Added cursor-pointer
+                  className={clsx(
+                    "px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider cursor-pointer truncate",
+                    header === "非コンバージョンユーザー" ? "w-32" : "w-auto"
+                  )}
                   onClick={() => handleHeaderClick(header)} // Added onClick handler
                 >
                   {header}{renderSortArrow(header)} {/* Added sort arrow */}
@@ -148,10 +152,9 @@ const AttributeCrossAnalysisPanel = ({ snapshotDate }) => {
           <tbody className="bg-white divide-y divide-gray-200">
             {displayData.map((row, rowIndex) => ( // Changed to displayData
               <tr key={`row-${rowIndex}`}>
-                {/* 통합된 headers 배열을 사용하여 모든 데이터 셀 동적 렌더링 */}
+                {/* 동적으로 데이터 셀 렌더링 */}
                 {headers.map((header, colIndex) => (
-                  <td key={`cell-${rowIndex}-${colIndex}`} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {/* row 객체의 키가 헤더 이름과 직접 일치하므로 바로 접근 */}
+                  <td key={`cell-${rowIndex}-${colIndex}`} className="px-4 py-2 text-sm font-medium text-gray-900 truncate">
                     {row[header]}
                   </td>
                 ))}
@@ -164,13 +167,13 @@ const AttributeCrossAnalysisPanel = ({ snapshotDate }) => {
   }
 
   return (
-    <div className="bg-white shadow-md rounded-lg p-6">
-      <h2 className="text-xl font-semibold mb-4">
+    <div className="bg-white shadow-md rounded-lg p-4">
+      <h2 className="text-lg font-semibold mb-4">
         属性別クロス分析 ({snapshotDate})
       </h2>
       {content}
     </div>
-  )
+  );
 }
 
 export default AttributeCrossAnalysisPanel;

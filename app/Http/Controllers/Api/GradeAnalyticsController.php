@@ -3,15 +3,26 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\GradeSnapshot;
+use App\Services\GradeAnalyticsService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;;
+use Illuminate\Support\Facades\DB;
 
 use Carbon\Carbon;
 use Database\Factories\UserFactory;
 use Illuminate\Support\Facades\Log;
 
+use function PHPSTORM_META\map;
+
 class GradeAnalyticsController extends Controller
 {
+  protected $service;
+
+  public function __construct(GradeAnalyticsService $service)
+  {
+    $this->service = $service;
+  }
+
   private $relevantSegmentIds = [1, 2, 3, 4, 5];
 
   private $translationMap = [
@@ -21,210 +32,31 @@ class GradeAnalyticsController extends Controller
     'dormant' => '休眠',
     'churned' => '離反',
     'never' => '非コンバージョンユーザー',
+    'new' => '新規',
   ];
 
   public function getKpiComparison(Request $request)
   {
-    // 1. 요청 파라미터 유효성 검사
+    // 1. 요청 파라미터 검사
     $request->validate([
-      'current_date' => 'required|date_format:Y-m-d',
+      'current_date'  => 'required|date_format:Y-m-d',
       'previous_date' => 'required|date_format:Y-m-d|before:current_date',
     ]);
 
-    $currentDate = Carbon::parse($request->input('current_date'));
+    $currentDate  = Carbon::parse($request->input('current_date'));
     $previousDate = Carbon::parse($request->input('previous_date'));
+    $branchIds = $request->input('selected_branches') ?? null;
 
-    // 2. 현재 날짜의 모든 KPI 계산 (DB에서 직접 집계)
-    // 이 함수는 이제 해당 날짜의 '전월 대비' 비율까지 모두 계산하여 반환합니다.
-    $currentKpis = $this->calculateAllKpisForDate($currentDate);
+    $kpiData = $this->service->getKpiComparison($currentDate, $previousDate, $branchIds);
 
-    // 3. 이전 날짜의 모든 KPI 계산 (DB에서 직접 집계)
-    $previousKpis = $this->calculateAllKpisForDate($previousDate);
-
-    // 4. 전월 대비 변화 계산
-    // 이제 각 KPI 값은 calculateAllKpisForDate에서 이미 계산되었으므로,
-    // 여기서는 단순히 두 날짜의 KPI 값을 비교하여 변화량을 계산합니다.
-    $activeUsersChange = $currentKpis['activeUsers'] - $previousKpis['activeUsers'];
-    $promotionRateChange = $currentKpis['promotionRate'] - $previousKpis['promotionRate'];
-    $retentionRateChange = $currentKpis['retentionRate'] - $previousKpis['retentionRate'];
-    $churnRateChange = $currentKpis['churnRate'] - $previousKpis['churnRate'];
-    $churnedUsersCumulativeChange = $currentKpis['churnedUsersCumulative'] - $previousKpis['churnedUsersCumulative'];
-
-    // 5. 응답 데이터 구성
-    $kpiData = [
-      [
-        'metric' => 'アクティブユーザー数（当月）',
-        'value' => number_format($currentKpis['activeUsers']) . '人',
-        'change' => ($activeUsersChange >= 0 ? '+' : '') . number_format($activeUsersChange) . '人',
-        'note' => '直近365日内1回以上',
-        'changeType' => $activeUsersChange >= 0 ? 'positive' : 'negative'
-      ],
-      [
-        'metric' => '昇格率',
-        'value' => sprintf('%.1f%%', $currentKpis['promotionRate']),
-        'change' => ($promotionRateChange >= 0 ? '+' : '') . sprintf('%.1fpt', $promotionRateChange),
-        'note' => '全体ユーザーの昇格率',
-        'changeType' => $promotionRateChange >= 0 ? 'positive' : 'negative'
-      ],
-      [
-        'metric' => '維持率',
-        'value' => sprintf('%.1f%%', $currentKpis['retentionRate']),
-        'change' => ($retentionRateChange >= 0 ? '+' : '') . sprintf('%.1fpt', $retentionRateChange),
-        'note' => '同一セグメント維持',
-        'changeType' => $retentionRateChange >= 0 ? 'positive' : 'negative'
-      ],
-      [
-        'metric' => '流出率',
-        'value' => sprintf('%.1f%%', $currentKpis['churnRate']),
-        'change' => ($churnRateChange >= 0 ? '+' : '') . sprintf('%.1fpt', $churnRateChange),
-        'note' => '全体ユーザーの降格率',
-        'changeType' => $churnRateChange >= 0 ? 'negative' : 'positive' // 유출률은 증가하면 부정적
-      ],
-      [
-        'metric' => '離反ユーザー数（累積）',
-        'value' => number_format($currentKpis['churnedUsersCumulative']) . '人',
-        'change' => ($churnedUsersCumulativeChange >= 0 ? '+' : '') . number_format($churnedUsersCumulativeChange) . '人',
-        'note' => '直近730日利用なし',
-        'changeType' => $churnedUsersCumulativeChange >= 0 ? 'positive' : 'negative'
-      ],
-    ];
-
-    // 최종 JSON 응답 반환
     return response()->json([
-      'status' => 'success',
-      'data' => $kpiData,
-      'current_date' => $currentDate->format('Y-m-d'),
+      'status'        => 'success',
+      'data'          => $kpiData,
+      'current_date'  => $currentDate->format('Y-m-d'),
       'previous_date' => $previousDate->format('Y-m-d'),
+      'selected_branches' => $branchIds,
     ]);
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  private function calculateAllKpisForDate(Carbon $date)
-  {
-    // 1. 해당 날짜의 기본 KPI (활성 사용자, 이탈 사용자) 계산
-    $baseKpis = DB::table('T_GRADE_SNAPSHOT')
-      ->whereDate('SNAPSHOT_DATE', $date)
-      ->select(
-        //DB::raw('COUNT(CASE WHEN SEGMENT_ID IN (1, 2, 3) THEN 1 END) AS active_users'),
-        DB::raw('COUNT(CASE WHEN SEGMENT_ID IN (1, 2, 3) THEN 1 END) AS active_users'),
-        DB::raw('COUNT(CASE WHEN SEGMENT_ID = 5 THEN 1 END) AS churned_users_cumulative')
-      )
-      ->first();
-
-    $activeUsers = $baseKpis->active_users ?? 0;
-    $churnedUsersCumulative = $baseKpis->churned_users_cumulative ?? 0;
-
-    // 2. 해당 날짜와 그 전월의 스냅샷을 비교하여 승급/유지/강등 사용자 수 계산
-    $previousMonthDate = $date->copy()->subMonth();
-
-    $gradeChanges = DB::table('T_GRADE_SNAPSHOT AS current_snap')
-      ->join('T_GRADE_SNAPSHOT AS prev_snap', function ($join) use ($date, $previousMonthDate) {
-        $join->on('current_snap.TICKET', '=', 'prev_snap.TICKET')
-          ->whereDate('current_snap.SNAPSHOT_DATE', $date)
-          ->whereDate('prev_snap.SNAPSHOT_DATE', $previousMonthDate);
-      })
-      ->select(
-        DB::raw('SUM(CASE WHEN current_snap.SEGMENT_ID < prev_snap.SEGMENT_ID THEN 1 ELSE 0 END) AS promoted_users'),
-        DB::raw('SUM(CASE WHEN current_snap.SEGMENT_ID = prev_snap.SEGMENT_ID THEN 1 ELSE 0 END) AS retained_users'),
-        DB::raw('SUM(CASE WHEN current_snap.SEGMENT_ID > prev_snap.SEGMENT_ID THEN 1 ELSE 0 END) AS demoted_users'),
-        DB::raw('COUNT(current_snap.TICKET) AS total_users_compared')
-      )
-      ->first();
-
-    // 3. 승급/유지/강등 비율 계산
-    $totalUsersCompared = $gradeChanges->total_users_compared ?? 0;
-    $promotedUsers = $gradeChanges->promoted_users ?? 0;
-    $retainedUsers = $gradeChanges->retained_users ?? 0;
-    $demotedUsers = $gradeChanges->demoted_users ?? 0;
-
-    $promotionRate = $totalUsersCompared > 0 ? ($promotedUsers / $totalUsersCompared) * 100 : 0;
-    $retentionRate = $totalUsersCompared > 0 ? ($retainedUsers / $totalUsersCompared) * 100 : 0;
-    $churnRate = $totalUsersCompared > 0 ? ($demotedUsers / $totalUsersCompared) * 100 : 0;
-
-    // 4. 모든 KPI 값을 배열로 반환
-    return [
-      'activeUsers' => $activeUsers,
-      'churnedUsersCumulative' => $churnedUsersCumulative,
-      'promotionRate' => $promotionRate,
-      'retentionRate' => $retentionRate,
-      'churnRate' => $churnRate,
-    ];
-  }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -259,116 +91,24 @@ class GradeAnalyticsController extends Controller
   public function getSegmentMigrationMatrix(Request $request)
   {
     $request->validate([
-      'current_date' => 'required|date_format:Y-m-d',
+      'current_date'  => 'required|date_format:Y-m-d',
       'previous_date' => 'required|date_format:Y-m-d|before:current_date',
     ]);
 
-    $currentDate = Carbon::parse($request->input('current_date'));
+    $currentDate  = Carbon::parse($request->input('current_date'));
     $previousDate = Carbon::parse($request->input('previous_date'));
+    $branchIds = $request->input('selected_branches') ?? null;
 
-    $segments = DB::table('SEGMENT_MASTER')
-      ->whereIn('SEGMENT_ID', $this->relevantSegmentIds)
-      ->orderBy('SEGMENT_ID')
-      ->get(['SEGMENT_ID', 'SEGMENT_NAME']);
-
-    //$segmentNames = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
-    $segmentNamesRaw = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
-
-    $this->translationMap = [
-      'core'    => 'コア',
-      'middle'  => 'ミドル',
-      'light'   => 'ライト',
-      'dormant' => '休眠',
-      'churned' => '離反',
-    ];
-
-    $segmentIdsOrdered = $segments->pluck('SEGMENT_ID')->toArray();
-
-    $translatedSegmentHeaders = [];
-    foreach ($segmentIdsOrdered as $id) {
-      $name = $segmentNamesRaw[$id] ?? null;
-      if ($name) {
-        $translatedSegmentHeaders[] = [
-          'id' => $id,
-          'name' => $this->translationMap[strtolower($name)] ?? $name,
-        ];
-      }
-    }
-
-    $matrix = [];
-    foreach ($segmentIdsOrdered as $prevId) {
-      $row = [];
-      foreach ($segmentIdsOrdered as $currId) {
-        $row[$currId] = 0;
-      }
-      $matrix[$prevId] = $row;
-    }
-
-    $transitions = DB::table('T_GRADE_SNAPSHOT AS current_snap')
-      ->join('T_GRADE_SNAPSHOT AS prev_snap', function ($join) use ($currentDate, $previousDate) {
-        $join->on('current_snap.TICKET', '=', 'prev_snap.TICKET')
-          ->whereDate('current_snap.SNAPSHOT_DATE', $currentDate)
-          ->whereDate('prev_snap.SNAPSHOT_DATE', $previousDate);
-      })
-      ->whereIn('prev_snap.SEGMENT_ID', $this->relevantSegmentIds)
-      ->whereIn('current_snap.SEGMENT_ID', $this->relevantSegmentIds)
-      ->select(
-        'prev_snap.SEGMENT_ID AS previous_segment_id',
-        'current_snap.SEGMENT_ID AS current_segment_id',
-        DB::raw('COUNT(current_snap.TICKET) AS user_count')
-      )
-      ->groupBy('prev_snap.SEGMENT_ID', 'current_snap.SEGMENT_ID')
-      ->get();
-
-    foreach ($transitions as $transition) {
-      if (isset($matrix[$transition->previous_segment_id][$transition->current_segment_id])) {
-        $matrix[$transition->previous_segment_id][$transition->current_segment_id] = $transition->user_count;
-      }
-    }
-
-    $formattedMatrix = [];
-    foreach ($segmentIdsOrdered as $prevId) {
-      $row = [];
-      foreach ($segmentIdsOrdered as $currId) {
-        $row[] = $matrix[$prevId][$currId];
-      }
-      $formattedMatrix[] = $row;
-    }
+    $matrixData = $this->service->getSegmentMigrationMatrix($currentDate, $previousDate, $branchIds);
 
     return response()->json([
-      'status' => 'success',
+      'status'        => 'success',
+      'data' => $matrixData,
+      'current_date'  => $currentDate->format('Y-m-d'),
       'previous_date' => $previousDate->format('Y-m-d'),
-      'current_date' => $currentDate->format('Y-m-d'),
-      'row_headers' => $translatedSegmentHeaders,
-      'col_headers' => $translatedSegmentHeaders,
-      'matrix_data' => $formattedMatrix,
+      'selected_branches' => $branchIds,
     ]);
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -407,123 +147,320 @@ class GradeAnalyticsController extends Controller
     ]);
 
     $snapshotDate = Carbon::parse($request->input('snapshot_date'));
+    $branchIds = $request->input('selected_branches') ?? null;
 
-    $segments = DB::table('SEGMENT_MASTER')
-      ->whereIn('SEGMENT_ID', $this->relevantSegmentIds)
-      ->orderBy('SEGMENT_ID')
-      ->get(['SEGMENT_ID', 'SEGMENT_NAME']);
-
-    $segmentNamesRaw = $segments->pluck('SEGMENT_NAME', 'SEGMENT_ID')->toArray();
-    $segmentIdsOrdered = $segments->pluck('SEGMENT_ID')->toArray();
-
-    $translatedSegmentHeaders = [];
-    foreach ($segmentIdsOrdered as $id) {
-      $name = $segmentNamesRaw[$id] ?? null;
-      if ($name) {
-        $translatedSegmentHeaders[$id] = $this->translationMap[strtolower($name)];
-      }
-    }
-
-    $query = DB::table('T_GRADE_SNAPSHOT AS gs')
-      ->join('T_MEMBER_INFO AS tmi', 'gs.TICKET', '=', 'tmi.TICKET')
-      ->whereDate('gs.SNAPSHOT_DATE', $snapshotDate)
-      ->whereIn('gs.SEGMENT_ID', $this->relevantSegmentIds);
-
-    $ageGroupSql = "
-      CASE
-        WHEN tmi.BIRTHDAY IS NULL THEN '不明'
-      ELSE
-        CASE
-          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 10 AND 19 THEN '10代'
-          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 20 AND 29 THEN '20代'
-          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 30 AND 39 THEN '30代'
-          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 40 AND 49 THEN '40代'
-          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') BETWEEN 50 AND 59 THEN '50代'
-          WHEN DATEDIFF(year, tmi.BIRTHDAY, '{$snapshotDate->format('Y-m-d')}') >= 60 THEN '60代以上'
-          ELSE '不在'
-        END
-      END
-    ";
-
-    $genderSql = "
-      CASE
-        WHEN tmi.SEX = 0 THEN '男性'
-        WHEN tmi.SEX = 1 THEN '女性'
-        ELSE 'その他'
-      END
-    ";
-
-    $selectColumns = [
-      DB::raw("{$ageGroupSql} AS age_group_val"),
-      DB::raw("{$genderSql} AS gender_val"),
-      'gs.SEGMENT_ID',
-      DB::raw('COUNT(gs.TICKET) AS user_count')
-    ];
-    $groupByColumns = [DB::raw($ageGroupSql), DB::raw($genderSql), 'gs.SEGMENT_ID'];
-
-    $results = $query
-      ->select($selectColumns)
-      ->groupBy($groupByColumns)
-      ->get();
-
-    $tempComposition = [];
-    $totalUsersByAttributeCombination = [];
-    foreach ($results as $row) {
-      $key = $row->age_group_val . '_' . $row->gender_val;
-      $totalUsersByAttributeCombination[$key] = ($totalUsersByAttributeCombination[$key] ?? 0) + $row->user_count;
-    }
-
-    foreach ($totalUsersByAttributeCombination as $key => $totalCount) {
-      // 키에서 연령대와 성별을 다시 추출 (예: "10代_男性" -> "10代", "男性")
-      list($ageGroup, $gender) = explode('_', $key, 2);
-
-      $tempComposition[$key] = [
-        '年代' => $ageGroup,
-        '性別' => $gender,
-      ];
-
-      // 모든 세그먼트 비율을 0.0%로 초기화
-      foreach ($translatedSegmentHeaders as $segmentName) {
-        $tempComposition[$key]["{$segmentName}比率"] = sprintf('%.1f%%', 0);
-      }
-    }
-
-    foreach ($results as $row) {
-        $key = $row->age_group_val . '_' . $row->gender_val;
-        $segmentName = $translatedSegmentHeaders[$row->SEGMENT_ID];
-        $ratio = $totalUsersByAttributeCombination[$key] > 0 ? ($row->user_count / $totalUsersByAttributeCombination[$key]) * 100 : 0;
-        $tempComposition[$key]["{$segmentName}比率"] = sprintf('%.1f%%', $ratio);
-    }
-
-    $ageGroupOrder = ['10代', '20代', '30代', '40代', '50代', '60代以上', '不在', '不明'];
-    $genderOrder = ['男性', '女性', 'その他'];
-
-    usort($tempComposition, function ($a, $b) use ($ageGroupOrder, $genderOrder) {
-      $ageGroupA = $a['年代'];
-      $ageGroupB = $b['年代'];
-      $genderGroupA = $a['性別'];
-      $genderGroupB = $b['性別'];
-
-      $ageGroupCompare = array_search($ageGroupA, $ageGroupOrder) <=> array_search($ageGroupB, $ageGroupOrder);
-      if ($ageGroupCompare !== 0) {
-        return $ageGroupCompare;
-      }
-
-      return array_search($genderGroupA, $genderOrder) <=> array_search($genderGroupB, $genderOrder);
-    });
-
-    $formattedComposition = array_values($tempComposition);
-
-    $finalHeaders = ['年代', '性別'];
-    foreach ($translatedSegmentHeaders as $segmentName) {
-      $finalHeaders[] = "{$segmentName}比率";
-    }
+    $formattedComposition = $this->service->getSegmentComposition($snapshotDate, $branchIds);
 
     return response()->json([
       'status' => 'success',
       'snapshot_date' => $snapshotDate->format('Y-m-d'),
-      'headers' => $finalHeaders,
       'data' => $formattedComposition,
+      'selected_branches' => $branchIds,
+    ]);
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  public function getSegmentSankeyData(Request $request)
+  {
+    $request->validate([
+      'start_date' => 'required|date_format:Y-m-d',
+      'end_date' => 'required|date_format:Y-m-d|before:current_date',
+    ]);
+
+    $startDateStr = $request->input('start_date');
+    $endDateStr = $request->input('end_date');
+    $branchIds = $request->input('selected_branches') ?? null;
+
+    try {
+      $startDate = Carbon::parse($startDateStr);
+      $endDate = Carbon::parse($endDateStr);
+    } catch (\Exception $e) {
+      return response()->json(['error' => '無効な日付形式です。'], 400);
+    }
+
+    if ($startDate->greaterThan($endDate)) {
+      return response()->json(['error' => 'start_dateはend_dateより遅い日付にすることはできません。'], 400);
+    }
+
+    // 기존 유저 전이 데이터
+    $allTransitions = GradeSnapshot::from('T_GRADE_SNAPSHOT AS t1')
+      ->join('T_GRADE_SNAPSHOT AS t2', function ($join) use ($branchIds) {
+        $join->on('t1.MEMBER_ID', '=', 't2.MEMBER_ID')
+          ->whereRaw('t2.SNAPSHOT_DATE = DATEADD(month, 1, t1.SNAPSHOT_DATE)')
+          ->when(!empty($branchIds), function ($query) use ($branchIds) {
+            $query->whereIn('t2.LAST_VISITED_SHOP', $branchIds);
+          });
+      })
+      ->join('SEGMENT_MASTER AS sm1', 't1.SEGMENT_ID', '=', 'sm1.SEGMENT_ID')
+      ->join('SEGMENT_MASTER AS sm2', 't2.SEGMENT_ID', '=', 'sm2.SEGMENT_ID')
+      ->select(
+        'sm1.SEGMENT_NAME AS current_segment_name',
+        'sm2.SEGMENT_NAME AS next_segment_name',
+        't1.SNAPSHOT_DATE AS current_snapshot_date',
+        't2.SNAPSHOT_DATE AS next_snapshot_date',
+        DB::raw('COUNT(t1.MEMBER_ID) AS transition_count')
+      )
+      ->byBranches($branchIds, 't1')
+      ->whereBetween('t1.SNAPSHOT_DATE', [$startDate->format('Y-m-d'), $endDate->copy()->subMonth()->format('Y-m-d')])
+      ->whereBetween('t2.SNAPSHOT_DATE', [$startDate->copy()->subMonth()->format('Y-m-d'), $endDate])
+      ->groupBy('sm1.SEGMENT_NAME', 'sm2.SEGMENT_NAME', 't1.SNAPSHOT_DATE', 't2.SNAPSHOT_DATE')
+      ->orderBy('t1.SNAPSHOT_DATE')
+      ->orderByRaw("
+      CASE sm1.SEGMENT_NAME
+        WHEN 'core' THEN 1
+        WHEN 'middle' THEN 2
+        WHEN 'light' THEN 3
+        WHEN 'dormant' THEN 4
+        WHEN 'churned' THEN 5
+        WHEN 'never' THEN 6
+        ELSE 99
+      END
+    ")
+      ->orderByRaw("
+      CASE sm2.SEGMENT_NAME
+        WHEN 'core' THEN 1
+        WHEN 'middle' THEN 2
+        WHEN 'light' THEN 3
+        WHEN 'dormant' THEN 4
+        WHEN 'churned' THEN 5
+        WHEN 'never' THEN 6
+        ELSE 99
+      END
+    ")
+      ->get();
+
+    // 신규 유저 데이터 (endDate 기준 신규 유입)
+    $newUsers = GradeSnapshot::from('T_GRADE_SNAPSHOT AS t')
+      ->join('SEGMENT_MASTER AS sm', 't.SEGMENT_ID', '=', 'sm.SEGMENT_ID')
+      ->where('t.SNAPSHOT_DATE', $endDate->format('Y-m-d'))
+      ->whereNotIn('t.MEMBER_ID', function ($query) use ($startDate) {
+        $query->select('MEMBER_ID')
+          ->from('T_GRADE_SNAPSHOT')
+          ->where('SNAPSHOT_DATE', $startDate->format('Y-m-d'));
+      })
+      ->select(
+        DB::raw("'新規 (" . $endDate->format('Y-m-d') . ")' AS source_segment_name"),
+        'sm.SEGMENT_NAME AS target_segment_name',
+        DB::raw("COUNT(*) AS transition_count")
+      )
+      ->groupBy('sm.SEGMENT_NAME')
+      ->get();
+
+    $nodes = [];
+    $links = [];
+    $nodeMap = [];
+    $nodeIdCounter = 0;
+
+    // 전이된 기존 유저 데이터 처리
+    foreach ($allTransitions as $transition) {
+      $currentSnapshotDate = $transition->current_snapshot_date;
+      $nextSnapshotDate = $transition->next_snapshot_date;
+
+      $translatedCurrentSegmentName = $this->translationMap[strtolower($transition->current_segment_name)] ?? $transition->current_segment_name;
+      $translatedNextSegmentName = $this->translationMap[strtolower($transition->next_segment_name)] ?? $transition->next_segment_name;
+
+      $sourceNodeName = $translatedCurrentSegmentName . ' (' . $currentSnapshotDate . ')';
+      $targetNodeName = $translatedNextSegmentName . ' (' . $nextSnapshotDate . ')';
+
+      if (!isset($nodeMap[$sourceNodeName])) {
+        $nodeMap[$sourceNodeName] = $nodeIdCounter;
+        $nodes[] = ['id' => $nodeIdCounter, 'name' => $sourceNodeName];
+        $nodeIdCounter++;
+      }
+
+      if (!isset($nodeMap[$targetNodeName])) {
+        $nodeMap[$targetNodeName] = $nodeIdCounter;
+        $nodes[] = ['id' => $nodeIdCounter, 'name' => $targetNodeName];
+        $nodeIdCounter++;
+      }
+
+      $links[] = [
+        'source' => $nodeMap[$sourceNodeName],
+        'target' => $nodeMap[$targetNodeName],
+        'value' => $transition->transition_count,
+      ];
+    }
+
+    // 신규 유입 유저 Sankey 노드/링크 처리
+    foreach ($newUsers as $entry) {
+      $sourceNodeName = $entry->source_segment_name; // "new (YYYY-MM-DD)"
+      $targetNodeName = ($this->translationMap[strtolower($entry->target_segment_name)] ?? $entry->target_segment_name) . ' (' . $endDate->format('Y-m-d') . ')';
+
+      if (!isset($nodeMap[$sourceNodeName])) {
+        $nodeMap[$sourceNodeName] = $nodeIdCounter;
+        $nodes[] = ['id' => $nodeIdCounter, 'name' => $sourceNodeName];
+        $nodeIdCounter++;
+      }
+
+      if (!isset($nodeMap[$targetNodeName])) {
+        $nodeMap[$targetNodeName] = $nodeIdCounter;
+        $nodes[] = ['id' => $nodeIdCounter, 'name' => $targetNodeName];
+        $nodeIdCounter++;
+      }
+
+      $links[] = [
+        'source' => $nodeMap[$sourceNodeName],
+        'target' => $nodeMap[$targetNodeName],
+        'value' => $entry->transition_count,
+      ];
+    }
+
+    return response()->json([
+      'nodes' => $nodes,
+      'links' => $links,
+    ]);
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  public function getSegmentSankeyData2(Request $request)
+  {
+
+    $request->validate([
+      'start_date' => 'required|date_format:Y-m-d',
+      'end_date' => 'required|date_format:Y-m-d|before:current_date',
+    ]);
+
+    $startDateStr = $request->input('start_date');
+    $endDateStr = $request->input('end_date');
+
+    if (!$startDateStr || !$endDateStr) {
+      return response()->json(['error' => 'start_datetと end_dateがありません。'], 400);
+    }
+
+    try {
+      $startDate = Carbon::parse($startDateStr);
+      $endDate = Carbon::parse($endDateStr);
+    } catch (\Exception $e) {
+      return response()->json(['error' => '無効な日付形式です。'], 400);
+    }
+
+    if ($startDate->greaterThan($endDate)) {
+      return response()->json(['error' => 'start_dateはend_dateより遅い日付にすることはできません。'], 400);
+    }
+
+    $snapshotDates = [];
+    $currentDate = clone $startDate;
+
+    while ($currentDate->lessThanOrEqualTo($endDate)) {
+      $snapshotDates[] = $currentDate->format('Y-m-d');
+      $currentDate->addMonthNoOverflow();
+    }
+
+    if (count($snapshotDates) < 2) {
+      return response()->json(['nodes' => [], 'links' => []]);
+    }
+
+    $nodes = [];
+    $links = [];
+    $nodeMap = [];
+    $nodeIdCounter = 0;
+
+    for ($i = 0; $i < count($snapshotDates) - 1; $i++) {
+      $currentSnapshotDate = $snapshotDates[$i];
+      $nextSnapshotDate = $snapshotDates[$i + 1];
+
+      $transitions = DB::connection('sqlsrv_192.168.180.105')
+        ->table('T_GRADE_SNAPSHOT AS t1')
+        ->join('T_GRADE_SNAPSHOT AS t2', 't1.MEMBER_ID', '=', 't2.MEMBER_ID')
+        ->join('SEGMENT_MASTER AS sm1', 't1.SEGMENT_ID', '=', 'sm1.SEGMENT_ID')
+        ->join('SEGMENT_MASTER AS sm2', 't2.SEGMENT_ID', '=', 'sm2.SEGMENT_ID')
+        ->select(
+          'sm1.SEGMENT_NAME AS current_segment_name',
+          'sm2.SEGMENT_NAME AS next_segment_name',
+          DB::raw('COUNT(t1.MEMBER_ID) AS transition_count')
+        )
+        ->where('t1.SNAPSHOT_DATE', $currentSnapshotDate)
+        ->where('t2.SNAPSHOT_DATE', $nextSnapshotDate)
+        ->groupBy('sm1.SEGMENT_NAME', 'sm2.SEGMENT_NAME')
+        ->get();
+
+      foreach ($transitions as $transition) {
+        $translatedCurrentSegmentName = $this->translationMap[strtolower($transition->current_segment_name)] ?? $transition->current_segment_name;
+        $translatedNextSegmentName = $this->translationMap[strtolower($transition->next_segment_name)] ?? $transition->next_segment_name;
+
+        $sourceNodeName = $translatedCurrentSegmentName . ' (' . $currentSnapshotDate . ')';
+        $targetNodeName = $translatedNextSegmentName . ' (' . $nextSnapshotDate . ')';
+
+        if (!isset($nodeMap[$sourceNodeName])) {
+          $nodeMap[$sourceNodeName] = $nodeIdCounter;
+          $nodes[] = ['id' => $nodeIdCounter, 'name' => $sourceNodeName];
+          $nodeIdCounter++;
+        }
+
+        if (!isset($nodeMap[$targetNodeName])) {
+          $nodeMap[$targetNodeName] = $nodeIdCounter;
+          $nodes[] = ['id' => $nodeIdCounter, 'name' => $targetNodeName];
+          $nodeIdCounter++;
+        }
+
+        $links[] = [
+          'source' => $nodeMap[$sourceNodeName],
+          'target' => $nodeMap[$targetNodeName],
+          'value' => $transition->transition_count,
+        ];
+      }
+    }
+
+    return response()->json([
+      'nodes' => $nodes,
+      'links' => $links,
     ]);
   }
 
@@ -566,111 +503,21 @@ class GradeAnalyticsController extends Controller
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  public function getSegmentSankeyData(Request $request) {
-
+  public function getSegmentSummary(Request $request)
+  {
     $request->validate([
-      'start_date' => 'required|date_format:Y-m-d',
-      'end_date' => 'required|date_format:Y-m-d|before:current_date',
+      'snapshot_date' => 'required|date_format:Y-m-d',
     ]);
 
-    $startDateStr = $request->input('start_date');
-    $endDateStr = $request->input('end_date');
+    $snapshotDate = Carbon::parse($request->input('snapshot_date'));
+    $branchIds = $request->input('selected_branches') ?? null;
 
-    if (!$startDateStr || !$endDateStr) {
-      return response()->json(['error' => 'start_datetと end_dateがありません。'], 400);
-    }
-
-    try {
-      $startDate = Carbon::parse($startDateStr);
-      $endDate = Carbon::parse($endDateStr);
-    }
-    catch (\Exception $e) {
-      return response()->json(['error' => '無効な日付形式です。'], 400);
-    }
-
-    if ($startDate->greaterThan($endDate)) {
-      return response()->json(['error' => 'start_dateはend_dateより遅い日付にすることはできません。'], 400);
-    }
-
-    $snapshotDates = [];
-    $currentDate = clone $startDate;
-
-    while ($currentDate->lessThanOrEqualTo($endDate)) {
-      $snapshotDates[] = $currentDate->format('Y-m-d');
-      $currentDate->addMonthNoOverflow();
-    }
-
-    if (count($snapshotDates) < 2) {
-      return response()->json(['nodes' => [], 'links' => []]);
-    }
-
-    $nodes = [];
-    $links = [];
-    $nodeMap = [];
-    $nodeIdCounter = 0;
-
-    for ($i = 0; $i < count($snapshotDates) -1; $i++) {
-      $currentSnapshotDate = $snapshotDates[$i];
-      $nextSnapshotDate = $snapshotDates[$i + 1];
-
-      $transitions = DB::table('T_GRADE_SNAPSHOT AS t1')
-        ->join('T_GRADE_SNAPSHOT AS t2', 't1.TICKET', '=', 't2.TICKET')
-        ->join('SEGMENT_MASTER AS sm1', 't1.SEGMENT_ID', '=', 'sm1.SEGMENT_ID')
-        ->join('SEGMENT_MASTER AS sm2', 't2.SEGMENT_ID', '=', 'sm2.SEGMENT_ID')
-        ->select(
-          'sm1.SEGMENT_NAME AS current_segment_name',
-          'sm2.SEGMENT_NAME AS next_segment_name',
-          DB::raw('COUNT(t1.TICKET) AS transition_count')
-        )
-        ->where('t1.SNAPSHOT_DATE', $currentSnapshotDate)
-        ->where('t2.SNAPSHOT_DATE', $nextSnapshotDate)
-        ->groupBy('sm1.SEGMENT_NAME', 'sm2.SEGMENT_NAME')
-        ->get();
-
-        foreach ($transitions as $transition) {
-          $translatedCurrentSegmentName = $this->translationMap[strtolower($transition->current_segment_name)] ?? $transition->current_segment_name;
-          $translatedNextSegmentName = $this->translationMap[strtolower($transition->next_segment_name)] ?? $transition->next_segment_name;
-
-          $sourceNodeName = $translatedCurrentSegmentName . ' (' . $currentSnapshotDate . ')';
-          $targetNodeName = $translatedNextSegmentName . ' (' . $nextSnapshotDate . ')';
-
-          if (!isset($nodeMap[$sourceNodeName])) {
-            $nodeMap[$sourceNodeName] = $nodeIdCounter;
-            $nodes[] = ['id' => $nodeIdCounter, 'name' => $sourceNodeName];
-            $nodeIdCounter++;
-          }
-
-          if(!isset($nodeMap[$targetNodeName])) {
-            $nodeMap[$targetNodeName] = $nodeIdCounter;
-            $nodes[] = ['id' => $nodeIdCounter, 'name' => $targetNodeName];
-            $nodeIdCounter++;
-          }
-
-          $links[] = [
-            'source' => $nodeMap[$sourceNodeName],
-            'target' => $nodeMap[$targetNodeName],
-            'value' => $transition->transition_count,
-          ];
-        }
-    }
+    $data = $this->service->getSegmentSummary($snapshotDate, $branchIds);
 
     return response()->json([
-      'nodes' => $nodes,
-      'links' => $links,
+      'status' => 'success',
+      'snapshot_date' => $snapshotDate->format('Y-m-d'),
+      'data' => $data,
     ]);
   }
 }

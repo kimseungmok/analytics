@@ -11,21 +11,21 @@ const Sidebar = () => {
       <nav className='sidebar-menu'>
         <div className='upper'>
           <ul>
-            <li>Dashboard</li>
-            <li>Reports</li>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/reports">Reports</a></li>
             <li>Users</li>
             <li>Settings</li>
           </ul>
         </div>
         <div className='middle'>
           <ul>
-            <li><a href="">Dashboard</a></li>
-            <li>Reports</li>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/reports">Reports</a></li>
           </ul>
         </div>
         <div className='middle'>
           <ul>
-            <li>Users</li>
+            <li><a href="/Users">Users</a></li>
             <li>Settings</li>
           </ul>
         </div>

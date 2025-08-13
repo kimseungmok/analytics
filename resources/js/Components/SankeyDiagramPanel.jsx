@@ -1,21 +1,19 @@
-// resources/js/Components/SankeyDiagramPanel.jsx
-
+// Updated SankeyDiagramPanel.jsx with "新規 (YYYY-MM-DD)" 신규유저 노드 처리 추가
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchSegmentTransitionSankeyData } from '../api/gradeAnalytics';
 import ChartGrid from './ChartGrid';
 
-// 1. 세그먼트별 색상 맵 정의 - 일본어 이름으로 변경
 const SEGMENT_COLOR_MAP = {
-  'コア': '#4682B4',    // core
-  'ライト': '#32CD32',   // light
-  'ミドル': '#8A2BE2',  // middle
-  '休眠': '#DAA520', // dormant
-  '離反': '#FF6347', // churned
-  '非コンバージョンユーザー': '#808080',   // never (백엔드 translationMap에 추가된 '非コンバージョンユーザー'에 맞춰 추가)
-  // 필요에 따라 더 많은 세그먼트와 색상을 추가할 수 있습니다.
+  '新規': '#00CED1', // 신규 유저 색상 추가
+  'コア': '#4682B4',
+  'ミドル': '#8A2BE2',
+  'ライト': '#32CD32',
+  '休眠': '#DAA520',
+  '離反': '#FF6347',
+  '非コンバージョンユーザー': '#808080',
 };
 
-const SankeyDiagramPanel = ({ startDate, endDate }) => {
+const SankeyDiagramPanel = ({ startDate, endDate, selectedBranches }) => {
   const [sankeyData, setSankeyData] = useState({ nodes: [], links: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -23,24 +21,33 @@ const SankeyDiagramPanel = ({ startDate, endDate }) => {
 
   const [googleChartsLoaded, setGoogleChartsLoaded] = useState(false);
 
+  const [segmentVisibility, setSegmentVisibility] = useState({
+    '新規': true, // 신규 노드 기본 표시
+    'コア': true,
+    'ミドル': true,
+    'ライト': true,
+    '休眠': true,
+    '離反': false,
+    '非コンバージョンユーザー': false,
+  });
+
+  const handleToggleSegment = (segmentName) => {
+    setSegmentVisibility(prev => ({ ...prev, [segmentName]: !prev[segmentName] }));
+  };
+
   useEffect(() => {
-    console.log('useEffect: Google Charts 로드 시도');
     if (window.google && window.google.charts) {
-      console.log('Google Charts 이미 로드됨.');
       waitForVisualizationReady();
     } else {
       const script = document.createElement('script');
       script.src = 'https://www.gstatic.com/charts/loader.js';
       script.onload = () => {
-        console.log('Google Charts 스크립트 로드 완료.');
         window.google.charts.load('current', { packages: ['sankey'] });
         window.google.charts.setOnLoadCallback(() => {
-          console.log('Google Charts 패키지 로드 및 콜백 실행 완료.');
           waitForVisualizationReady();
         });
       };
       script.onerror = () => {
-        console.error('Google Charts 스크립트 로드 실패');
         setError('チャートライブラリの読み込みに失敗しました。');
       };
       document.head.appendChild(script);
@@ -48,13 +55,10 @@ const SankeyDiagramPanel = ({ startDate, endDate }) => {
 
     function waitForVisualizationReady(retryCount = 0) {
       if (window.google.visualization?.Sankey) {
-        console.log('Google Sankey 로딩 완료됨.');
         setGoogleChartsLoaded(true);
       } else if (retryCount < 10) {
-        console.log('Google Sankey 아직 준비 안됨. 재시도 중...', retryCount);
         setTimeout(() => waitForVisualizationReady(retryCount + 1), 200);
       } else {
-        console.error('Google Sankey 로딩 실패 - 10회 시도 후 중단');
         setError('チャートの初期化に失敗しました。');
       }
     }
@@ -62,116 +66,116 @@ const SankeyDiagramPanel = ({ startDate, endDate }) => {
 
   useEffect(() => {
     const getSankeyData = async () => {
-      console.log('useEffect: 데이터 가져오기 시도. startDate:', startDate, 'endDate:', endDate);
-      if (!startDate || !endDate) {
-        console.log('startDate 또는 endDate가 없어 데이터 가져오기 건너뜀.');
-        setSankeyData({ nodes: [], links: [] });
-        return;
-      }
-
+      if (!startDate || !endDate) return;
       setIsLoading(true);
       setError(null);
       try {
-        const data = await fetchSegmentTransitionSankeyData(startDate, endDate);
-        console.log('데이터 가져오기 성공:', data);
+        const data = await fetchSegmentTransitionSankeyData(startDate, endDate, selectedBranches);
         setSankeyData(data);
       } catch (err) {
         setError('データの取得中にエラーが発生しました。');
-        console.error('Failed to fetch Sankey data:', err);
       } finally {
         setIsLoading(false);
       }
     };
-
     getSankeyData();
   }, [startDate, endDate]);
 
   useEffect(() => {
-    console.log('useEffect: 차트 그리기 시도. googleChartsLoaded:', googleChartsLoaded, 'sankeyData:', sankeyData, 'chartContainerRef.current:', chartContainerRef.current);
-    if (googleChartsLoaded && sankeyData.nodes.length > 0 && chartContainerRef.current) {
-      const drawChart = () => {
-        console.log('drawChart 함수 실행 중...');
-        const data = new window.google.visualization.DataTable();
-        data.addColumn('string', 'From');
-        data.addColumn('string', 'To');
-        data.addColumn('number', 'Weight');
+    if (!googleChartsLoaded || sankeyData.nodes.length === 0 || !chartContainerRef.current) return;
 
-        const nodeIdToNameMap = new Map();
-        sankeyData.nodes.forEach(node => {
-          nodeIdToNameMap.set(node.id, node.name);
-        });
+    const visibleSegmentNames = Object.keys(segmentVisibility).filter(name => segmentVisibility[name]);
+    const filteredNodes = sankeyData.nodes.filter(node => {
+      const nameMatch = node.name.match(/^([^\s\(]+)/);
+      const segmentName = nameMatch ? nameMatch[1] : 'default';
+      return visibleSegmentNames.includes(segmentName);
+    });
 
-        const chartRows = sankeyData.links.map(link => {
-          const value = Number(link.value);
-          return [
-            nodeIdToNameMap.get(link.source),
-            nodeIdToNameMap.get(link.target),
-            isNaN(value) ? 0 : value
-          ];
-        });
+    const visibleNodeIdToNameMap = new Map();
+    filteredNodes.forEach(node => visibleNodeIdToNameMap.set(node.id, node.name));
 
-        data.addRows(chartRows);
-        console.log('Google Charts DataTable에 데이터 추가 완료. Rows:', chartRows.length);
+    const filteredLinks = sankeyData.links.filter(link =>
+      visibleNodeIdToNameMap.has(link.source) && visibleNodeIdToNameMap.has(link.target)
+    );
 
-        // 2. 노드 색상 동적 생성
-        const nodeColorsArray = sankeyData.nodes.map(node => {
-          // 노드 이름에서 세그먼트 이름 추출 (예: "離反 (2025-05-01)" -> "離反")
-          // 괄호 '(' 또는 공백 ' '이 나오기 전까지의 문자열을 추출하도록 정규식 수정
-          const segmentNameMatch = node.name.match(/^([^\s\(]+)/);
-          const segmentName = segmentNameMatch ? segmentNameMatch[1] : 'default'; // 매칭 실패 시 'default' 사용
-
-          // 정의된 색상 맵에서 색상 가져오기, 없으면 회색 기본값
-          return SEGMENT_COLOR_MAP[segmentName] || '#CCCCCC';
-        });
-
-        const options = {
-          width: '100%',
-          height: 500,
-          sankey: {
-            node: {
-              colors: nodeColorsArray, // 동적으로 생성된 세그먼트별 색상 적용
-              label: { fontName: 'Arial', fontSize: 10, color: '#000' }
-            },
-            link: {
-              colorMode: 'source', // 링크는 시작 노드의 색상을 따름
-              // 'colors' 배열은 colorMode가 'gradient'일 때 주로 사용됩니다.
-              // 'source' 모드에서는 별도로 지정할 필요가 없습니다.
-            }
-          }
-        };
-
-        try {
-          const chart = new window.google.visualization.Sankey(chartContainerRef.current);
-          chart.draw(data, options);
-          console.log('Sankey 차트 그리기 명령 실행 완료.');
-        } catch (e) {
-          console.error('Sankey 차트 그리기 중 오류 발생:', e);
-        }
-      };
-
-      // Google Charts가 완전히 로드되었는지 다시 확인 후 그리기
-      if (window.google && window.google.visualization && window.google.visualization.Sankey) {
-        drawChart();
-      } else {
-        console.log('Google Charts visualization 객체가 아직 준비되지 않음.');
-      }
-    } else {
-      console.log('차트 그리기 조건 미충족:', { googleChartsLoaded, sankeyDataNodesLength: sankeyData.nodes.length, chartContainerRefCurrent: chartContainerRef.current });
+    if (filteredLinks.length === 0 && filteredNodes.length === 0) {
+      chartContainerRef.current.innerHTML = '<p>表示するデータがありません。</p>';
+      return;
     }
-  }, [sankeyData, googleChartsLoaded]);
+
+    const data = new window.google.visualization.DataTable();
+    data.addColumn('string', 'From');
+    data.addColumn('string', 'To');
+    data.addColumn('number', 'Weight');
+
+    const getShortDateLabel = (fullName) => {
+      const match = fullName.match(/^([^\s$]+)\s\((\d{4}-\d{2}-\d{2})$/);
+      if (match) {
+        const segment = match[1];
+        const date = new Date(match[2]);
+        return `${segment} (${String(date.getFullYear() % 100).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')})`;
+      }
+      return fullName;
+    };
+
+    data.addRows(filteredLinks.map(link => [
+      getShortDateLabel(visibleNodeIdToNameMap.get(link.source)),
+      getShortDateLabel(visibleNodeIdToNameMap.get(link.target)),
+      Number(link.value)
+    ]));
+
+    const nodeColorsArray = filteredNodes.map(node => {
+      const match = node.name.match(/^([^\s\(]+)/);
+      const name = match ? match[1] : 'default';
+      return SEGMENT_COLOR_MAP[name] || '#CCCCCC';
+    });
+
+    const options = {
+      width: '100%',
+      height: 500,
+      sankey: {
+        node: {
+          colors: nodeColorsArray,
+          label: { fontName: 'Arial', fontSize: 10, color: '#000' }
+        },
+        link: {
+          colorMode: 'source'
+        }
+      }
+    };
+
+    try {
+      const chart = new window.google.visualization.Sankey(chartContainerRef.current);
+      chart.draw(data, options);
+    } catch (e) {
+      setError('チャートの描画中にエラーが発生しました。');
+    }
+  }, [sankeyData, googleChartsLoaded, segmentVisibility]);
 
   return (
     <ChartGrid title={`セグメント遷移サンキーダイアグラム (${startDate} ~ ${endDate})`}>
-      <div className="p-4">
+      <div className="p-2">
+        <div className="mb-2 flex flex-wrap gap-2">
+          {Object.keys(SEGMENT_COLOR_MAP).map(segmentName => (
+            <button
+              key={segmentName}
+              onClick={() => handleToggleSegment(segmentName)}
+              className={`px-2 py-1 rounded-md text-xs font-medium transition-colors duration-200
+                ${segmentVisibility[segmentName] ? 'text-white hover:opacity-90' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}
+              style={{ backgroundColor: segmentVisibility[segmentName] ? SEGMENT_COLOR_MAP[segmentName] : undefined }}
+            >
+              {segmentName}
+            </button>
+          ))}
+        </div>
+
         {isLoading && <p>データを読み込み中...</p>}
         {error && <p className="text-red-500">{error}</p>}
-        {!isLoading && !error && sankeyData.nodes.length === 0 && (startDate && endDate) && (
+        {!isLoading && !error && sankeyData.nodes.length === 0 && startDate && endDate && (
           <p>選択された期間のデータがありません。</p>
         )}
         {!isLoading && !error && sankeyData.nodes.length > 0 && (
-          <div ref={chartContainerRef} style={{ width: '100%', height: '500px' }}>
-            {/* Sankey チャートがここにレンダリングされます。 */}
-          </div>
+          <div ref={chartContainerRef} style={{ width: '100%', height: '500px' }}></div>
         )}
       </div>
     </ChartGrid>

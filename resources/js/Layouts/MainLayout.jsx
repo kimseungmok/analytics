@@ -10,7 +10,9 @@ const MainLayout = () => {
   const location = useLocation();
 
   const pageTitleMap = {
-    '/': 'Dashboard',
+    //'/': 'Dashboard',
+    '/': 'TestDashboard',
+    '/Dashboard': 'Dashboard',
     '/reports': 'Reports',
     '/users': 'Users',
   }
@@ -44,7 +46,7 @@ const MainLayout = () => {
             {theme === 'dark' ? 'light mode' : 'dark mode'}
           </button>
         </Header>
-        <main className='p-4 overflow-auto'>
+        <main className='p-4 overflow-auto h-screen'>
           <Outlet />
         </main>
       </div>
